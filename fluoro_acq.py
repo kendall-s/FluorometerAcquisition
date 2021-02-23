@@ -15,6 +15,7 @@ from PyQt5.QtGui import QFont
 import pyqtgraph as pg
 import sys 
 import os
+from pyqtgraph import colormap
 import serial
 import serial.tools.list_ports
 import time
@@ -66,8 +67,8 @@ class MainWindow(QMainWindow):
         self.connection_status = QLineEdit(" No Connection ")
         self.connection_status.setReadOnly(True)
         self.connection_status.setAlignment(QtCore.Qt.AlignCenter)
-        self.connection_status.setStyleSheet("QLineEdit { background: rgb(255, 0, 0); color: rgb(250, 250, 250);}")
-        
+        self.connection_status.setStyleSheet("QLineEdit { background: rgb(224, 20, 0); color: rgb(250, 250, 250);}")
+        self.connection_status.setFont(QFont('Segoe UI'))
 
         linesep_1 = QFrame()
         linesep_1.setFrameShape(QFrame.HLine)
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
         self.browse_path_button = QPushButton("Browse Path")
         self.browse_path_button.clicked.connect(self.browse_file_folder)
 
-        files_name_label = QLabel('Files will be saved into the selected directory with the name FluoroAcq and have a time stamp associated')
+        files_name_label = QLabel('Files will be saved into the selected directory')
         files_name_label.setWordWrap(True)
 
         linesep_2 = QFrame()
@@ -93,7 +94,7 @@ class MainWindow(QMainWindow):
 
         self.high_voltage_checkbox = QCheckBox("High Voltage On?")
 
-        measure_freq_label = QLabel('Measurement Frequency:')
+        measure_freq_label = QLabel('Measure Frequency:')
         self.measure_freq_combo = QComboBox()
         self.measure_freq_combo.addItems(['100ms', '200ms', '250ms', '500ms', '1000ms'])    
         self.measure_freq_combo.setEditable(True)
@@ -102,41 +103,55 @@ class MainWindow(QMainWindow):
         self.start_acquire = QPushButton("Acquire Data")
         self.start_acquire.clicked.connect(self.acquire_data)
 
-        signal_value_label = QLabel("Signal Value:")
-        self.signal_value = QLineEdit()
+        self.rescale_chart = QPushButton("Reset Auto")
+        self.rescale_chart.setToolTip('Reset Chart Scaling Auto')
+        self.rescale_chart.clicked.connect(self.autoscale_chart)
 
+        self.signal_value = QLineEdit()
+        self.signal_value.setReadOnly(True)
+        self.signal_value.setFixedWidth(120)
+
+        pg.setConfigOptions(antialias=True)
         self.graphWidget = pg.PlotWidget()
+        self.graphWidget.setLabel('left', 'Raw Count')
+        self.graphWidget.setLabel('bottom', 'Time')
+        self.graphWidget.showGrid(x=True, y=True)
+        self.graphWidget.setBackground('w')
+        self.graphWidget.sizePolicy().setHorizontalStretch(3)
+
+        graph_pen = pg.mkPen(color=(10, 10, 180))
+        
 
         # Add everything to our grid layout
         # Column 1
         grid_layout.addWidget(ports_label, 0, 0, 1, 2)
-        grid_layout.addWidget(self.ports_combo, 1, 0, 1, 2)
-        grid_layout.addWidget(self.connect_button, 2, 0, 1, 2)
-        grid_layout.addWidget(self.connection_status, 3, 0, 1, 2)
-        grid_layout.addWidget(linesep_1, 4, 0, 1, 2)
+        grid_layout.addWidget(self.ports_combo, 1, 0, 1, 1)
+        grid_layout.addWidget(self.connect_button, 1, 1, 1, 1)
+        grid_layout.addWidget(self.connection_status, 2, 0, 1, 2)
+        grid_layout.addWidget(linesep_1, 3, 0, 1, 2)
 
-        grid_layout.addWidget(files_control_label, 5, 0, 1, 2)
-        grid_layout.addWidget(file_path_label, 6, 0, 1, 1)
-        grid_layout.addWidget(self.folder_path_lineedit, 7, 0, 1, 2)
-        grid_layout.addWidget(self.browse_path_button, 8, 0, 1, 2)
-        grid_layout.addWidget(files_name_label, 9, 0, 1, 2)
+        grid_layout.addWidget(files_control_label, 4, 0, 1, 2)
+        grid_layout.addWidget(file_path_label, 5, 0, 1, 1)
+        grid_layout.addWidget(self.folder_path_lineedit, 6, 0, 1, 2)
+        grid_layout.addWidget(self.browse_path_button, 7, 0, 1, 2)
+        grid_layout.addWidget(files_name_label, 8, 0, 1, 2)
 
 
-        grid_layout.addWidget(linesep_2, 10, 0, 1, 2)
-        grid_layout.addWidget(controls_label, 11, 0, 1, 2)
-        grid_layout.addWidget(self.high_voltage_checkbox, 12, 0, 1, 2)
-        grid_layout.addWidget(measure_freq_label, 13, 0, 1, 1)
-        grid_layout.addWidget(self.measure_freq_combo, 13, 1, 1, 1)   
+        grid_layout.addWidget(linesep_2, 9, 0, 1, 2)
+        grid_layout.addWidget(controls_label, 10, 0, 1, 2)
+        grid_layout.addWidget(self.high_voltage_checkbox, 11, 0, 1, 2)
+        grid_layout.addWidget(measure_freq_label, 12, 0, 1, 1)
+        grid_layout.addWidget(self.measure_freq_combo, 12, 1, 1, 1)   
 
-        grid_layout.addWidget(self.start_acquire, 16, 0, 1, 2)    
-
-        grid_layout.addWidget(signal_value_label, 17, 0,)
-        grid_layout.addWidget(self.signal_value, 17, 1)
+        grid_layout.addWidget(self.start_acquire, 14, 0, 1, 2)    
+        
+        grid_layout.addWidget(self.rescale_chart, 16, 0, 1, 1)
+        grid_layout.addWidget(self.signal_value, 16, 1, 1, 1)
 
         # Column 2
-        grid_layout.addWidget(self.graphWidget, 0, 2, 18, 8)
+        grid_layout.addWidget(self.graphWidget, 0, 2, 18, 12)
 
-        self.plotted_data = self.graphWidget.plot(self.plot_x, self.plot_y)
+        self.plotted_data = self.graphWidget.plot(self.plot_x, self.plot_y, pen=graph_pen)
         self.graphWidget.useOpenGL(True)
         
         self.centralWidget().setLayout(grid_layout)
@@ -149,7 +164,7 @@ class MainWindow(QMainWindow):
         """
         ports = serial.tools.list_ports.comports()
         for port in ports:
-            self.ports_combo.addItem(str(port))
+            self.ports_combo.addItem(str(port)[:15] + "...")
         
     def toggle_port(self):
         """
@@ -166,7 +181,7 @@ class MainWindow(QMainWindow):
 
             self.connect_button.setText("Connect")
             self.connection_status.setText("No Connection")
-            self.connection_status.setStyleSheet("QLineEdit { background: rgb(255, 0, 0); color: rgb(250, 250, 250);}")
+            self.connection_status.setStyleSheet("QLineEdit { background: rgb(224, 20, 0); color: rgb(250, 250, 250);}")
         
         else:
             print("Opening port")
@@ -178,7 +193,7 @@ class MainWindow(QMainWindow):
 
                 self.connect_button.setText("Disconnect")
                 self.connection_status.setText("CONNECTED")
-                self.connection_status.setStyleSheet("QLineEdit { background: rgb(0, 180, 20); color: rgb(250, 250, 250);}")
+                self.connection_status.setStyleSheet("QLineEdit { background: rgb(15, 200, 53); color: rgb(250, 250, 250);}")
             except Exception:
                 print(Exception)    
 
@@ -265,11 +280,12 @@ class MainWindow(QMainWindow):
         self.plot_y.append(new_data[0])
 
         self.plotted_data.setData(self.plot_x, self.plot_y)
-        self.signal_value.setText(new_data[0])
-        
+        self.signal_value.setText(f'Signal: {new_data[0]}')
+    
+
+    def autoscale_chart(self):
         if len(self.plot_x) > 3000:
             self.graphWidget.setXRange(self.plot_x[-3000], self.plot_x[-1])
-        
 
 class DataAcquirer(QObject):
     """
@@ -285,8 +301,7 @@ class DataAcquirer(QObject):
         self.serial_object = serial_object
         self.folder_path = folder_path
 
-        self.file_path = folder_path + f"/fluoro_acquisition_{time.time()}.csv"
-
+        self.file_path = folder_path + f"/FluoroAcq_{time.time()}.csv"
         self.raw_data = []
         self.raw_time_data = []
         
