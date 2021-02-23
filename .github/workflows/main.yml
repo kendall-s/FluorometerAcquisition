@@ -1,0 +1,32 @@
+# This workflow is used to build an exe app for use by other less technically inclined 
+name: PyInstallerExeBuild
+
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  build:
+    name: Create Release
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.7
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.7
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Build with Pyinstaller
+      run: |
+        pyinstaller fluoro_acq.py
+    - uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        prerelease: false
+        title: "Automatic Build"
+        files: |
+          ./dist/*.exe
