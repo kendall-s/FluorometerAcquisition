@@ -20,6 +20,7 @@ import serial
 import serial.tools.list_ports
 import time
 import random
+import statistics
 
 # Convert the time to a value to send to the detector
 PERIOD_CONVERTER = {'100ms': 10, '200ms': 20, '250ms': 25, '500ms': 50, '1000ms': 100}
@@ -38,6 +39,11 @@ class MainWindow(QMainWindow):
         self.results = []
         self.plot_x = []
         self.plot_y = []
+
+        self.st = None
+        self.count_back = 0
+        self.smooth_plot_x = []
+        self.smooth_plot_y = []
 
         # Startup functions
         self.init_ui()
@@ -120,6 +126,7 @@ class MainWindow(QMainWindow):
         self.graphWidget.sizePolicy().setHorizontalStretch(3)
 
         graph_pen = pg.mkPen(color=(10, 10, 180))
+        smooth_graph_pen = pg.mkPen(color=(10, 180, 10))
         
 
         # Add everything to our grid layout
@@ -152,6 +159,8 @@ class MainWindow(QMainWindow):
         grid_layout.addWidget(self.graphWidget, 0, 2, 18, 12)
 
         self.plotted_data = self.graphWidget.plot(self.plot_x, self.plot_y, pen=graph_pen)
+        self.smoothed_plotted_data = self.graphWidget.plot(self.smooth_plot_x, self.smooth_plot_y, pen=smooth_graph_pen)
+
         self.graphWidget.useOpenGL(True)
         
         self.centralWidget().setLayout(grid_layout)
@@ -279,6 +288,25 @@ class MainWindow(QMainWindow):
         self.plot_x.append(new_data[1])
         self.plot_y.append(new_data[0])
 
+        ct = new_data[1]
+
+        if not self.st:
+            self.st = new_data[1]
+
+        if ct - self.st > 1:
+            subset = self.plot_y[-self.count_back:]
+            median = statistics.median(subset)
+            
+            self.count_back = 0
+            self.st = None
+            self.smooth_plot_x.append(ct)
+            self.smooth_plot_y.append(median)
+
+            self.smoothed_plotted_data.setData(self.smooth_plot_x, self.smooth_plot_y)
+        else:
+            self.count_back = self.count_back + 1
+        
+
         self.plotted_data.setData(self.plot_x, self.plot_y)
         self.signal_value.setText(f'Signal: {new_data[0]}')
     
@@ -309,6 +337,7 @@ class DataAcquirer(QObject):
         """ This is the main data acquisition loop - this will run while the class variable measuring is True"""
         self.serial_object.write(b"C\r")
         clear = self.serial_object.inWaiting()
+        read = self.serial_object.read(size=4)
         #clear = self.ser.inWaiting()
         while self.measuring:
             f = open(self.file_path, "a")
