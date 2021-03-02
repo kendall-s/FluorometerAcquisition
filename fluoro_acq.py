@@ -33,13 +33,16 @@ class MainWindow(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
 
+        # Init these as NANs
         self.folder_path = None
         self.ser = None
         self.measuring = False
-        self.results = []
+        
+        # Lists for the raw data
         self.plot_x = []
         self.plot_y = []
 
+        # These are used for creating the 1 second median smoothed chart
         self.st = None
         self.count_back = 0
         self.smooth_plot_x = []
@@ -50,12 +53,19 @@ class MainWindow(QMainWindow):
         self.init_ports()
     
     def init_ui(self):
-        
+        """
+        This function contains all of the UI setup, including the initialising of every
+        widget and then placing them in the relevant locations of the grid layout
+        """
+        # Set the app wide font as Segoe UI (the windows 10 system font)
         self.setFont(QFont('Segoe UI'))
         self.setStyleSheet(""" QLabel { font: 14px; } QLineEdit { font: 14px } QComboBox { font: 14px } QPushButton { font: 14px } QCheckBox { font: 14px }""")
+        # Create the grid layout and set the gutter spacing to 10px
         grid_layout = QGridLayout()
         grid_layout.setSpacing(10)
 
+        # The following 6 lines are used to set the window size and then place it
+        # in the center of the 'active' screen (user could be using a multi monitor setup)
         self.setGeometry(0, 0, 1400, 550)
         qtRectangle = self.frameGeometry()
         screen = QApplication.desktop().screenNumber(QApplication.desktop().cursor().pos())
@@ -65,6 +75,9 @@ class MainWindow(QMainWindow):
         
         self.setWindowTitle('Fluorometer Logger')
     
+
+        # Start of the widgets initialisation
+
         ports_label = QLabel('<b>Select Port:</b>')
         self.ports_combo = QComboBox()
 
@@ -109,9 +122,8 @@ class MainWindow(QMainWindow):
         self.start_acquire = QPushButton("Acquire Data")
         self.start_acquire.clicked.connect(self.acquire_data)
 
-        self.rescale_chart = QPushButton("Reset Auto")
-        self.rescale_chart.setToolTip('Reset Chart Scaling Auto')
-        self.rescale_chart.clicked.connect(self.autoscale_chart)
+        self.autoscale_chart = QCheckBox("Auto Track")
+        self.autoscale_chart.setToolTip('Track new data along X axis')
 
         self.signal_value = QLineEdit()
         self.signal_value.setReadOnly(True)
@@ -152,17 +164,20 @@ class MainWindow(QMainWindow):
 
         grid_layout.addWidget(self.start_acquire, 14, 0, 1, 2)    
         
-        grid_layout.addWidget(self.rescale_chart, 16, 0, 1, 1)
+        grid_layout.addWidget(self.autoscale_chart, 16, 0, 1, 1)
         grid_layout.addWidget(self.signal_value, 16, 1, 1, 1)
 
         # Column 2
         grid_layout.addWidget(self.graphWidget, 0, 2, 18, 12)
 
+        # Set up our pyqtgraph widget with the 2 plottable lines
         self.plotted_data = self.graphWidget.plot(self.plot_x, self.plot_y, pen=graph_pen)
         self.smoothed_plotted_data = self.graphWidget.plot(self.smooth_plot_x, self.smooth_plot_y, pen=smooth_graph_pen)
-
+        
+        # Use open Gl for slightly better performance
         self.graphWidget.useOpenGL(True)
         
+        # Set the layout of the application window widget to the grid layout which is holding everything
         self.centralWidget().setLayout(grid_layout)
 
 
@@ -268,6 +283,7 @@ class MainWindow(QMainWindow):
             else:
                 print('There is not a current serial connection!')
         else:
+            # This will stop the data acquisition loop
             self.measuring = False
             self.data_thread.measuring = False
             
@@ -280,40 +296,62 @@ class MainWindow(QMainWindow):
             self.start_acquire.setText("Start Acquire")
 
     def update_chart(self, new_data):
-        """Class method that will add the newly collected data to the plot"""
-        if len(self.plot_x) == 10000:
+        """
+        Class method that will add the newly collected data to the plot,
+        this will also create a median smoothed dataset every 1 second and add it to the chart
+        """
+        # Once we have a lot of data in the lists, start removing points so that the 
+        # app stays performant
+        if len(self.plot_x) == 20000:
             self.plot_x.pop(0)
             self.plot_y.pop(0)
 
+        # Add the latest raw data to the raw plot lists
         self.plot_x.append(new_data[1])
         self.plot_y.append(new_data[0])
 
-        ct = new_data[1]
-
+        # st is start time, this is used to create a median smoothed chart
         if not self.st:
             self.st = new_data[1]
 
-        if ct - self.st > 1:
+        # Set the current time to the latest data time point
+        ct = new_data[1]
+
+        # ct is current time, the value 1 represents 1 second. If 1 second has passed
+        # then create a median of the past second worth of data and pass it to the smooth lists
+        if (ct - self.st) > 1:
+            
+            # Pull subset from the raw data with count back var, calc median
             subset = self.plot_y[-self.count_back:]
             median = statistics.median(subset)
+
+            # I am making this median value slightly smaller than the raw data so that is 
+            # is offset from the raw data line - improving ledgibility on the chart
+            median = median * 0.99
             
-            self.count_back = 0
-            self.st = None
+            # Add the median smoothed data
             self.smooth_plot_x.append(ct)
             self.smooth_plot_y.append(median)
 
+            # Update the chart with the new data
             self.smoothed_plotted_data.setData(self.smooth_plot_x, self.smooth_plot_y)
+
+            # Reset the start time and the count back index
+            self.count_back = 0
+            self.st = None
         else:
+            # count_back is used to get the index of the raw data
             self.count_back = self.count_back + 1
         
-
+        # Update the raw chart and display the latest signal value
         self.plotted_data.setData(self.plot_x, self.plot_y)
         self.signal_value.setText(f'Signal: {new_data[0]}')
-    
 
-    def autoscale_chart(self):
-        if len(self.plot_x) > 3000:
-            self.graphWidget.setXRange(self.plot_x[-3000], self.plot_x[-1])
+        if self.autoscale_chart.isChecked():
+            # This will pan the chart along when there is enough data to do so
+            if len(self.plot_x) > 3000:
+                self.graphWidget.setXRange(self.plot_x[-3000], self.plot_x[-1])
+
 
 class DataAcquirer(QObject):
     """
